@@ -12,14 +12,14 @@ import {
   Modal,
 } from 'react-native';
 
+import QRCodeScanner from 'react-native-qrcode-scanner';
+import { RNCamera } from 'react-native-camera';
+
 // --- Configuração da API ---
-// O endereço 10.0.2.2 é usado para o emulador Android se conectar ao localhost do seu computador.
-// Para um dispositivo iOS físico, use o endereço IP da sua máquina na rede local (ex: 'http://192.168.1.10:8000/api/v1').
 const API_BASE_URL = 'http://10.0.2.2:8000/api/v1';
 
 // --- Definições de Tipos (TypeScript) ---
-// É uma boa prática manter as definições de tipo para clareza e prevenção de erros.
-type ScreenType = 'login' | 'dashboard';
+type ScreenType = 'login' | 'dashboard' | 'scanner';
 
 interface User {
   id: number;
@@ -30,24 +30,24 @@ interface User {
 }
 
 interface Reward {
-    id: number;
-    name: string;
-    description: string | null;
-    points_required: number;
+  id: number;
+  name: string;
+  description: string | null;
+  points_required: number;
 }
 
 interface PointTransaction {
-    id: number;
-    points: number;
-    client: { name: string };
-    awarded_by: { name: string };
-    created_at: string;
+  id: number;
+  points: number;
+  client: { name: string };
+  awarded_by: { name: string };
+  created_at: string;
 }
 
 interface CompanyReport {
-    total_points_awarded: number;
-    total_rewards_redeemed: number;
-    unique_customers: number;
+  total_points_awarded: number;
+  total_rewards_redeemed: number;
+  unique_customers: number;
 }
 
 interface AuthScreenProps {
@@ -58,6 +58,12 @@ interface DashboardScreenProps {
   user: User;
   authToken: string;
   setAuthToken: React.Dispatch<React.SetStateAction<string | null>>;
+  setScreen: React.Dispatch<React.SetStateAction<ScreenType>>;
+}
+
+interface ScannerScreenProps {
+  authToken: string;
+  setScreen: React.Dispatch<React.SetStateAction<ScreenType>>;
 }
 
 // --- Componente Principal da Aplicação ---
@@ -65,6 +71,7 @@ export default function App() {
   const [authToken, setAuthToken] = React.useState<string | null>(null);
   const [userData, setUserData] = React.useState<User | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
+  const [screen, setScreen] = React.useState<ScreenType>('login');
 
   const fetchUserData = async (token: string) => {
     setIsLoading(true);
@@ -81,7 +88,7 @@ export default function App() {
           setAuthToken(null);
         }
       } else {
-        setAuthToken(null); // Token inválido ou expirado
+        setAuthToken(null);
       }
     } catch (error) {
       console.error('Erro ao buscar dados do utilizador:', error);
@@ -95,8 +102,10 @@ export default function App() {
   React.useEffect(() => {
     if (authToken) {
       fetchUserData(authToken);
+      setScreen('dashboard');
     } else {
       setUserData(null);
+      setScreen('login');
     }
   }, [authToken]);
 
@@ -104,14 +113,18 @@ export default function App() {
     return <View style={styles.container}><ActivityIndicator size="large" color="#1d4ed8" /></View>;
   }
 
-  if (userData && authToken) {
-    return <DashboardScreen user={userData} authToken={authToken} setAuthToken={setAuthToken} />;
+  if (screen === 'scanner' && userData && authToken) {
+    return <ScannerScreen authToken={authToken} setScreen={setScreen} />;
   }
-  
+
+  if (screen === 'dashboard' && userData && authToken) {
+    return <DashboardScreen user={userData} authToken={authToken} setAuthToken={setAuthToken} setScreen={setScreen} />;
+  }
+
   return <LoginScreen setAuthToken={setAuthToken} />;
 }
 
-// --- Tela de Login (Sem alterações significativas) ---
+// --- Tela de Login ---
 const LoginScreen: React.FC<AuthScreenProps> = ({ setAuthToken }) => {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -149,15 +162,28 @@ const LoginScreen: React.FC<AuthScreenProps> = ({ setAuthToken }) => {
       setLoading(false);
     }
   };
-  
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.authContainer}>
         <Text style={styles.title}>Fideliza+ Gestão</Text>
         <Text style={styles.subtitle}>Acesso para Administradores e Colaboradores</Text>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-        <TextInput style={styles.input} placeholder="Senha" value={password} onChangeText={setPassword} secureTextEntry />
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Senha"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
         <TouchableOpacity onPress={handleLogin} disabled={loading} style={styles.button}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Entrar</Text>}
         </TouchableOpacity>
@@ -166,8 +192,53 @@ const LoginScreen: React.FC<AuthScreenProps> = ({ setAuthToken }) => {
   );
 };
 
+// --- Tela do Leitor de QR Code ---
+const ScannerScreen: React.FC<ScannerScreenProps> = ({ authToken, setScreen }) => {
+  const handleAddPoints = async (clientId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/points/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ client_identifier: clientId }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        Alert.alert("Sucesso!", `1 ponto foi adicionado com sucesso ao cliente ID ${clientId}.`);
+      } else {
+        Alert.alert("Erro", data.detail || "Não foi possível adicionar o ponto.");
+      }
+    } catch (error) {
+      Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
+    } finally {
+      setScreen('dashboard');
+    }
+  };
+
+  const onSuccess = (e: { data: string }) => {
+    handleAddPoints(e.data);
+  };
+
+  return (
+    <QRCodeScanner
+      onRead={onSuccess}
+      flashMode={RNCamera.Constants.FlashMode.off}
+      topContent={
+        <Text style={styles.centerText}>
+          Aponte a câmara para o QR Code do cliente
+        </Text>
+      }
+      bottomContent={
+        <TouchableOpacity style={styles.buttonTouchable} onPress={() => setScreen('dashboard')}>
+          <Text style={styles.buttonText}>Cancelar</Text>
+        </TouchableOpacity>
+      }
+    />
+  );
+};
+
+
 // --- Tela Principal (Dashboard) ---
-const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setAuthToken }) => {
+const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setAuthToken, setScreen }) => {
   const [clientId, setClientId] = React.useState('');
   const [isAddingPoints, setIsAddingPoints] = React.useState(false);
   const [collaborators, setCollaborators] = React.useState<User[]>([]);
@@ -189,7 +260,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
   const fetchAdminData = async () => {
     try {
       const headers = { 'Authorization': `Bearer ${authToken}` };
-      
+
       const [collabRes, rewardRes, transRes, reportRes] = await Promise.all([
         fetch(`${API_BASE_URL}/collaborators/`, { headers }),
         fetch(`${API_BASE_URL}/rewards/`, { headers }),
@@ -223,19 +294,23 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
     try {
       const response = await fetch(`${API_BASE_URL}/points/add`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}`},
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({ client_identifier: clientId }),
       });
       const data = await response.json();
       if (response.ok) {
         Alert.alert("Sucesso!", `1 ponto foi adicionado com sucesso ao cliente ID ${clientId}.`);
         setClientId('');
-        if (user.user_type === 'ADMIN') fetchAdminData(); // Atualiza transações
-      } else { Alert.alert("Erro", data.detail || "Não foi possível adicionar o ponto."); }
+        if (user.user_type === 'ADMIN') fetchAdminData();
+      } else {
+        Alert.alert("Erro", data.detail || "Não foi possível adicionar o ponto.");
+      }
     } catch (error) {
       console.error("Erro ao adicionar pontos:", error);
       Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
-    } finally { setIsAddingPoints(false); }
+    } finally {
+      setIsAddingPoints(false);
+    }
   };
 
   const handleAddCollaborator = async () => {
@@ -253,13 +328,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
       const data = await response.json();
       if (response.ok) {
         Alert.alert("Sucesso!", `Colaborador "${newCollabName}" adicionado.`);
-        setNewCollabName(''); setNewCollabEmail(''); setNewCollabPassword('');
+        setNewCollabName('');
+        setNewCollabEmail('');
+        setNewCollabPassword('');
         fetchAdminData();
-      } else { Alert.alert("Erro", data.detail || "Não foi possível adicionar o colaborador."); }
+      } else {
+        Alert.alert("Erro", data.detail || "Não foi possível adicionar o colaborador.");
+      }
     } catch (error) {
       console.error("Erro ao adicionar colaborador:", error);
       Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
-    } finally { setIsAddingCollab(false); }
+    } finally {
+      setIsAddingCollab(false);
+    }
   };
 
   const handleAddReward = async () => {
@@ -277,22 +358,32 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
       const data = await response.json();
       if (response.ok) {
         Alert.alert("Sucesso!", `Prémio "${newRewardName}" adicionado.`);
-        setNewRewardName(''); setNewRewardDescription(''); setNewRewardPoints('');
+        setNewRewardName('');
+        setNewRewardDescription('');
+        setNewRewardPoints('');
         fetchAdminData();
-      } else { Alert.alert("Erro", data.detail || "Não foi possível adicionar o prémio."); }
+      } else {
+        Alert.alert("Erro", data.detail || "Não foi possível adicionar o prémio.");
+      }
     } catch (error) {
       console.error("Erro ao adicionar prémio:", error);
       Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
-    } finally { setIsAddingReward(false); }
+    } finally {
+      setIsAddingReward(false);
+    }
   };
 
-  const handleLogout = () => { setAuthToken(null); };
+  const handleLogout = () => {
+    setAuthToken(null);
+  };
 
   const handleDeleteCollaborator = async (collab: User) => {
     Alert.alert("Confirmar Exclusão", `Tem a certeza que deseja excluir o colaborador "${collab.name}"?`,
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Excluir", style: "destructive",
+        {
+          text: "Excluir",
+          style: "destructive",
           onPress: async () => {
             try {
               const response = await fetch(`${API_BASE_URL}/collaborators/${collab.id}`, {
@@ -306,7 +397,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
                 const data = await response.json();
                 Alert.alert("Erro", data.detail || "Não foi possível excluir o colaborador.");
               }
-            } catch (error) { Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor."); }
+            } catch (error) {
+              Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
+            }
           },
         },
       ]
@@ -318,15 +411,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
     setUpdatedName(collab.name);
     setIsEditModalVisible(true);
   };
-  
+
   const handleUpdateCollaborator = async () => {
     if (!updatedName || !editingCollab) {
       setIsEditModalVisible(false);
       return;
     }
     if (updatedName === editingCollab.name) {
-        setIsEditModalVisible(false);
-        return; // Nenhuma alteração a ser feita
+      setIsEditModalVisible(false);
+      return;
     }
     try {
       const response = await fetch(`${API_BASE_URL}/collaborators/${editingCollab.id}`, {
@@ -341,14 +434,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
         const data = await response.json();
         Alert.alert("Erro", data.detail || "Não foi possível atualizar o colaborador.");
       }
-    } catch (error) { Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor."); }
+    } catch (error) {
+      Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
+    }
     finally {
       setIsEditModalVisible(false);
       setEditingCollab(null);
       setUpdatedName('');
     }
   };
-  
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView>
@@ -370,11 +465,21 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
             <Text style={styles.infoCardLabel}>Função</Text>
             <Text style={styles.infoCardValue}>{user.user_type}</Text>
           </View>
-          
+
           <View style={styles.featureCard}>
             <Text style={styles.featureTitle}>Pontuar Cliente</Text>
-            <Text style={styles.featureSubtitle}>Insira o ID do cliente para adicionar um ponto.</Text>
-            <TextInput style={styles.input} placeholder="ID do Cliente" value={clientId} onChangeText={setClientId} keyboardType="number-pad" />
+            <TouchableOpacity onPress={() => setScreen('scanner')} style={[styles.button, { marginBottom: 16, backgroundColor: '#16a34a' }]}>
+              <Text style={styles.buttonText}>Escanear QR Code</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.featureSubtitle}>Ou insira o ID manualmente:</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="ID do Cliente"
+              value={clientId}
+              onChangeText={setClientId}
+              keyboardType="number-pad"
+            />
             <TouchableOpacity onPress={handleAddPoints} disabled={isAddingPoints} style={styles.button}>
               {isAddingPoints ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Adicionar 1 Ponto</Text>}
             </TouchableOpacity>
@@ -403,12 +508,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
               <View style={styles.featureCard}>
                 <Text style={styles.featureTitle}>Atividade Recente</Text>
                 {transactions.length > 0 ? (
-                  transactions.slice(0, 5).map(tx => ( // Mostra apenas as 5 mais recentes
+                  transactions.slice(0, 5).map(tx => (
                     <View key={tx.id} style={styles.itemContainer}>
                       <View>
                         <Text style={styles.itemName}>
                           {tx.points > 0 ? `+${tx.points} pts para ` : `${tx.points} pts de `}
-                          <Text style={{fontWeight: 'bold'}}>{tx.client.name}</Text>
+                          <Text style={{ fontWeight: 'bold' }}>{tx.client.name}</Text>
                         </Text>
                         <Text style={styles.itemSubtitle}>
                           {tx.points > 0 ? `Por: ${tx.awarded_by.name}` : 'Resgate de Prémio'}
@@ -423,7 +528,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
                   <Text style={styles.emptyText}>Nenhuma atividade registada.</Text>
                 )}
               </View>
-              
+
               <View style={styles.featureCard}>
                 <Text style={styles.featureTitle}>Gestão de Colaboradores</Text>
                 {collaborators.length > 0 ? (
@@ -448,9 +553,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
                 )}
                 <View style={styles.divider} />
                 <Text style={styles.featureSubtitle}>Adicionar Novo Colaborador</Text>
-                <TextInput style={styles.input} placeholder="Nome do Colaborador" value={newCollabName} onChangeText={setNewCollabName} />
-                <TextInput style={styles.input} placeholder="Email do Colaborador" value={newCollabEmail} onChangeText={setNewCollabEmail} keyboardType="email-address" autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="Senha Provisória" value={newCollabPassword} onChangeText={setNewCollabPassword} secureTextEntry />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nome do Colaborador"
+                  value={newCollabName}
+                  onChangeText={setNewCollabName}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email do Colaborador"
+                  value={newCollabEmail}
+                  onChangeText={setNewCollabEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Senha Provisória"
+                  value={newCollabPassword}
+                  onChangeText={setNewCollabPassword}
+                  secureTextEntry
+                />
                 <TouchableOpacity onPress={handleAddCollaborator} disabled={isAddingCollab} style={styles.button}>
                   {isAddingCollab ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Adicionar Colaborador</Text>}
                 </TouchableOpacity>
@@ -473,9 +596,25 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
                 )}
                 <View style={styles.divider} />
                 <Text style={styles.featureSubtitle}>Adicionar Novo Prémio</Text>
-                <TextInput style={styles.input} placeholder="Nome do Prémio" value={newRewardName} onChangeText={setNewRewardName} />
-                <TextInput style={styles.input} placeholder="Descrição (opcional)" value={newRewardDescription} onChangeText={setNewRewardDescription} />
-                <TextInput style={styles.input} placeholder="Pontos Necessários" value={newRewardPoints} onChangeText={setNewRewardPoints} keyboardType="number-pad" />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nome do Prémio"
+                  value={newRewardName}
+                  onChangeText={setNewRewardName}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Descrição (opcional)"
+                  value={newRewardDescription}
+                  onChangeText={setNewRewardDescription}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Pontos Necessários"
+                  value={newRewardPoints}
+                  onChangeText={setNewRewardPoints}
+                  keyboardType="number-pad"
+                />
                 <TouchableOpacity onPress={handleAddReward} disabled={isAddingReward} style={styles.button}>
                   {isAddingReward ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Adicionar Prémio</Text>}
                 </TouchableOpacity>
@@ -522,41 +661,186 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, authToken, setA
   );
 };
 
-
 // --- Folha de Estilos (StyleSheet) ---
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f9fafb' },
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f9fafb' },
-  authContainer: { flex: 1, justifyContent: 'center', padding: 24 },
-  title: { fontSize: 32, fontWeight: 'bold', color: '#1d4ed8', textAlign: 'center', marginBottom: 8 },
-  subtitle: { fontSize: 18, color: '#4b5563', textAlign: 'center', marginBottom: 40 },
-  input: { backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 16, fontSize: 16, borderWidth: 1, borderColor: '#e5e7eb' },
-  button: { backgroundColor: '#1d4ed8', padding: 16, borderRadius: 12, alignItems: 'center' },
-  buttonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  errorText: { color: '#ef4444', textAlign: 'center', marginBottom: 16 },
-  dashboardContainer: { padding: 24 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 },
-  headerTitle: { fontSize: 24, color: '#374151' },
-  headerName: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
-  logoutButton: { backgroundColor: '#fee2e2', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 99 },
-  logoutButtonText: { color: '#dc2626', fontWeight: 'bold' },
-  infoCard: { backgroundColor: 'white', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  infoCardLabel: { color: '#6b7280', fontSize: 14, marginBottom: 2 },
-  infoCardValue: { color: '#1f2937', fontSize: 16, fontWeight: '500' },
-  divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 16 },
-  featureCard: { marginTop: 24, backgroundColor: 'white', borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  featureTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
-  featureSubtitle: { fontSize: 14, color: '#6b7280', marginBottom: 20 },
-  itemContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  itemName: { fontSize: 16, fontWeight: '500', color: '#1f2937', flexShrink: 1 },
-  itemSubtitle: { fontSize: 14, color: '#6b7280' },
-  pointsTag: { backgroundColor: '#e0e7ff', color: '#3730a3', fontWeight: 'bold', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 },
-  emptyText: { textAlign: 'center', color: '#6b7280', paddingVertical: 10 },
-  actionsContainer: { flexDirection: 'row' },
-  actionButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, marginLeft: 8 },
-  editButton: { backgroundColor: '#dbeafe' },
-  deleteButton: { backgroundColor: '#fee2e2' },
-  actionButtonText: { fontWeight: '500', color: '#374151' },
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f9fafb'
+  },
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb'
+  },
+  authContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#1d4ed8',
+    textAlign: 'center',
+    marginBottom: 8
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#4b5563',
+    textAlign: 'center',
+    marginBottom: 40
+  },
+  input: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 16,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb'
+  },
+  button: {
+    backgroundColor: '#1d4ed8',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  errorText: {
+    color: '#ef4444',
+    textAlign: 'center',
+    marginBottom: 16
+  },
+  dashboardContainer: {
+    padding: 24
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 32
+  },
+  headerTitle: {
+    fontSize: 24,
+    color: '#374151'
+  },
+  headerName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937'
+  },
+  logoutButton: {
+    backgroundColor: '#fee2e2',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 99
+  },
+  logoutButtonText: {
+    color: '#dc2626',
+    fontWeight: 'bold'
+  },
+  infoCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  infoCardLabel: {
+    color: '#6b7280',
+    fontSize: 14,
+    marginBottom: 2
+  },
+  infoCardValue: {
+    color: '#1f2937',
+    fontSize: 16,
+    fontWeight: '500'
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#f3f4f6',
+    marginVertical: 16
+  },
+  featureCard: {
+    marginTop: 24,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  featureTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 4
+  },
+  featureSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 20
+  },
+  itemContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6'
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1f2937',
+    flexShrink: 1
+  },
+  itemSubtitle: {
+    fontSize: 14,
+    color: '#6b7280'
+  },
+  pointsTag: {
+    backgroundColor: '#e0e7ff',
+    color: '#3730a3',
+    fontWeight: 'bold',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 99
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#6b7280',
+    paddingVertical: 10
+  },
+  actionsContainer: {
+    flexDirection: 'row'
+  },
+  actionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginLeft: 8
+  },
+  editButton: {
+    backgroundColor: '#dbeafe'
+  },
+  deleteButton: {
+    backgroundColor: '#fee2e2'
+  },
+  actionButtonText: {
+    fontWeight: '500',
+    color: '#374151'
+  },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -613,5 +897,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1f2937',
+  },
+  centerText: {
+    flex: 1,
+    fontSize: 18,
+    padding: 32,
+    color: '#777',
+    textAlign: 'center',
+  },
+  buttonTouchable: {
+    backgroundColor: '#dc2626',
+    padding: 16,
+    borderRadius: 12,
+    margin: 24,
   },
 });
