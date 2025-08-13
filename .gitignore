@@ -1,0 +1,124 @@
+# ===================================================================
+# GERAL
+# ===================================================================
+
+# Ficheiros de ambiente (MUITO IMPORTANTE PARA A SEGURANÇA)
+# Contém senhas, tokens e chaves de API.
+.env
+.env.local
+.env.*.local
+
+# Ficheiros do sistema operativo
+.DS_Store
+Thumbs.db
+
+# Ficheiros de log e de base de dados temporários
+*.log
+*.db
+*.sqlite3
+
+
+# ===================================================================
+# AMBIENTES DE DESENVOLVIMENTO & PACOTES
+# ===================================================================
+
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+.venv/
+
+# Node.js / npm / Yarn
+node_modules/
+package-lock.json
+yarn-error.log*
+yarn-debug.log*
+npm-debug.log*
+
+# Yarn Berry (PnP mode)
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Ruby / CocoaPods
+ios/Pods/
+vendor/bundle/
+
+
+# ===================================================================
+# BUILD E ARTEFATOS GERADOS
+# ===================================================================
+
+# Geral
+*.jsbundle
+/coverage/
+.metro-cache/
+.metro-health-check*
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+android/app/src/main/assets/index.android.bundle
+android/local.properties
+*.apk
+*.aab
+*.hprof
+*.keystore
+!debug.keystore
+
+# iOS / Xcode
+ios/build/
+ios/DerivedData/
+*.ipa
+*.hmap
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+**/.xcode.env.local
+
+# Hermes (JavaScript Engine)
+android/app/build/generated/assets/hermes/
+ios/hermes_snapshot_build/
+
+
+# ===================================================================
+# CONFIGURAÇÕES DE EDITOR/IDE
+# ===================================================================
+
+# VS Code
+.vscode/
+.vscode-test/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# C++ (para NDK)
+.cxx/
+
+# Kotlin
+.kotlin/
+
+
+# ===================================================================
+# FERRAMENTAS E TESTES
+# ===================================================================
+
+# Fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
