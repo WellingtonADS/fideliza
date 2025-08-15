@@ -11,7 +11,7 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-
+// NOVO: Importações para o leitor de QR Code
 import QRCodeScanner from 'react-native-qrcode-scanner';
 import { RNCamera } from 'react-native-camera';
 
@@ -19,7 +19,7 @@ import { RNCamera } from 'react-native-camera';
 const API_BASE_URL = 'http://10.0.2.2:8000/api/v1';
 
 // --- Definições de Tipos (TypeScript) ---
-type ScreenType = 'login' | 'dashboard' | 'scanner';
+type ScreenType = 'login' | 'dashboard' | 'scanner'; // Adiciona a tela do scanner
 
 interface User {
   id: number;
@@ -61,6 +61,7 @@ interface DashboardScreenProps {
   setScreen: React.Dispatch<React.SetStateAction<ScreenType>>;
 }
 
+// NOVO: Props para a tela do Scanner
 interface ScannerScreenProps {
   authToken: string;
   setScreen: React.Dispatch<React.SetStateAction<ScreenType>>;
@@ -71,6 +72,7 @@ export default function App() {
   const [authToken, setAuthToken] = React.useState<string | null>(null);
   const [userData, setUserData] = React.useState<User | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
+  // NOVO: Estado para controlar a tela atual, incluindo o scanner
   const [screen, setScreen] = React.useState<ScreenType>('login');
 
   const fetchUserData = async (token: string) => {
@@ -112,15 +114,16 @@ export default function App() {
   if (isLoading) {
     return <View style={styles.container}><ActivityIndicator size="large" color="#1d4ed8" /></View>;
   }
-
+  
+  // Lógica de navegação atualizada
   if (screen === 'scanner' && userData && authToken) {
     return <ScannerScreen authToken={authToken} setScreen={setScreen} />;
   }
-
+  
   if (screen === 'dashboard' && userData && authToken) {
     return <DashboardScreen user={userData} authToken={authToken} setAuthToken={setAuthToken} setScreen={setScreen} />;
   }
-
+  
   return <LoginScreen setAuthToken={setAuthToken} />;
 }
 
@@ -192,48 +195,49 @@ const LoginScreen: React.FC<AuthScreenProps> = ({ setAuthToken }) => {
   );
 };
 
-// --- Tela do Leitor de QR Code ---
+// --- NOVO: Tela do Leitor de QR Code ---
 const ScannerScreen: React.FC<ScannerScreenProps> = ({ authToken, setScreen }) => {
-  const handleAddPoints = async (clientId: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/points/add`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ client_identifier: clientId }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        Alert.alert("Sucesso!", `1 ponto foi adicionado com sucesso ao cliente ID ${clientId}.`);
-      } else {
-        Alert.alert("Erro", data.detail || "Não foi possível adicionar o ponto.");
-      }
-    } catch (error) {
-      Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
-    } finally {
-      setScreen('dashboard');
-    }
-  };
+    const handleAddPoints = async (clientId: string) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/points/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ client_identifier: clientId }),
+            });
+            const data = await response.json();
+            if (response.ok) {
+                Alert.alert("Sucesso!", `1 ponto foi adicionado com sucesso ao cliente ID ${clientId}.`);
+            } else {
+                Alert.alert("Erro", data.detail || "Não foi possível adicionar o ponto.");
+            }
+        } catch (error) {
+            Alert.alert("Erro de Rede", "Não foi possível conectar ao servidor.");
+        } finally {
+            setScreen('dashboard'); // Volta para o dashboard após a tentativa
+        }
+    };
 
-  const onSuccess = (e: { data: string }) => {
-    handleAddPoints(e.data);
-  };
+    const onSuccess = (e: { data: string }) => {
+        // e.data contém o texto lido do QR Code (que é o ID do cliente)
+        handleAddPoints(e.data);
+    };
 
-  return (
-    <QRCodeScanner
-      onRead={onSuccess}
-      flashMode={RNCamera.Constants.FlashMode.off}
-      topContent={
-        <Text style={styles.centerText}>
-          Aponte a câmara para o QR Code do cliente
-        </Text>
-      }
-      bottomContent={
-        <TouchableOpacity style={styles.buttonTouchable} onPress={() => setScreen('dashboard')}>
-          <Text style={styles.buttonText}>Cancelar</Text>
-        </TouchableOpacity>
-      }
-    />
-  );
+    return (
+        <QRCodeScanner
+            onRead={onSuccess}
+            flashMode={RNCamera.Constants.FlashMode.off}
+            topContent={
+                <Text style={styles.centerText}>
+                    Aponte a câmara para o QR Code do cliente
+                </Text>
+            }
+            bottomContent={
+                <TouchableOpacity style={styles.buttonTouchable} onPress={() => setScreen('dashboard')}>
+                    <Text style={styles.buttonText}>Cancelar</Text>
+                </TouchableOpacity>
+            }
+        />
+    );
 };
 
 
